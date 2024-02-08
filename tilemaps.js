@@ -1,3 +1,5 @@
+
+
 var input = [];
 keyPressed = function() {
     input[keyCode] = true;
@@ -8,13 +10,13 @@ keyReleased = function() {
 
 /** Level Info **/
 // {
-var LevelMap = [
+var levelData = [
     {
         level: 1,
         xPos: 0,
         yPos: 0,
-        tileWidth: 25, // Width of each tile
-        tileHeight: 25, // Height of each tile
+        tileWidth: 25,
+        tileHeight: 25,
         map: [
             "########################",
             "#                      #",
@@ -48,346 +50,402 @@ var viewCam;
 
 /** Auxiliary Functions **/
 // {
-/** Camera Object Constructor **/
-// {
-var Camera = function(x, y, width, height, info) {
-    this.x = x;
-    this.y = y;
-    this.width = width;
-    this.height = height;
-    this.halfWidth = this.width / 2;
-    this.halfHeight = this.height / 2;
-    
-    this.info = info;
-    
-    // initalize camera focus at the center of the camera lens
-    this.focusXPos = this.halfWidth;
-    this.focusYPos = this.halfHeight;
-    
-    // update speed : adjust for smoothness
-    this.speed = 0.158;
-    this.angle = 0;
+
+/**
+ * @function boxCollide
+ **/
+var boxCollide = function(box1, box2) {
+    return (box1.x + box1.width > box2.x && box1.x < box2.x + box2.width && box1.y + box1.height > box2.y && box1.y < box2.y + box2.height);
 };
 
-Camera.prototype.track = function(object) {
-    // stationary camera: camera focuses on itself
-    if (typeof object === "undefined") {
-        object = this;
-    }
-    
-    // calculate center of object
-    var xPos = object.x + object.width / 2;
-    var yPos = object.y + object.height / 2;
-    
-    // calculate angle between center of camera and center of object
-    this.angle = atan2(yPos - this.focusYPos, xPos - this.focusXPos);
-    if (isNaN(this.angle)) {
+/** 
+ * @object_constructor Camera
+ **/
+var Camera = (function() {
+    // Camera constructor function
+    function Camera (x, y, width, height, info) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.halfWidth = this.width / 2;
+        this.halfHeight = this.height / 2;
+        
+        this.info = info;
+        
+        // initalize camera focus at the center of the camera lens
+        this.focusXPos = this.halfWidth;
+        this.focusYPos = this.halfHeight;
+        
+        // update speed : adjust for smoothness
+        this.speed = 0.158;
         this.angle = 0;
-        return;
     }
     
-    // calculate 'update' vector to move camera
-    this.distance = dist(this.focusXPos, this.focusYPos, xPos, yPos) * this.speed;
-    this.focusXPos += this.distance * cos(this.angle);
-    this.focusYPos += this.distance * sin(this.angle);
+    // instance method: tracks an object's position
+    Camera.prototype.track = function(object) {
+        // stationary camera: camera focuses on itself
+        if (typeof object === "undefined") {
+            object = this;
+        }
+        
+        // calculate center of object
+        var xPos = object.x + object.width / 2;
+        var yPos = object.y + object.height / 2;
+        
+        // calculate angle between center of camera and center of object
+        this.angle = atan2(yPos - this.focusYPos, xPos - this.focusXPos);
+        if (isNaN(this.angle)) {
+            this.angle = 0;
+            return;
+        }
+        
+        // calculate 'update' vector to move camera
+        this.distance = dist(this.focusXPos, this.focusYPos, xPos, yPos) * this.speed;
+        this.focusXPos += this.distance * cos(this.angle);
+        this.focusYPos += this.distance * sin(this.angle);
+        
+        // constrain camera by level boundaries
+        this.focusXPos = constrain(this.focusXPos, this.info.xPos + this.halfWidth, this.info.width - this.halfWidth);
+        this.focusYPos = constrain(this.focusYPos, this.info.yPos + this.halfHeight, this.info.height - this.halfHeight);
+        
+        // update camera coordinates
+        this.x = -round(this.halfWidth - this.focusXPos);
+        this.y = -round(this.halfHeight - this.focusYPos);
+    };
     
-    // constrain camera by level boundaries
-    this.focusXPos = constrain(this.focusXPos, this.info.xPos + this.halfWidth, this.info.width - this.halfWidth);
-    this.focusYPos = constrain(this.focusYPos, this.info.yPos + this.halfHeight, this.info.height - this.halfHeight);
+    // static method: selects a camera to view
+    Camera.view = function(camera) {
+        // translate based on camera's coordinates
+        if (camera.info.width >= camera.width) {
+            translate(-camera.x, 0);
+        } else {
+            translate(0, 0);
+        }
     
-    // update camera coordinates
-    this.x = -round(this.halfWidth - this.focusXPos);
-    this.y = -round(this.halfHeight - this.focusYPos);
-};
+        if (camera.info.height >= camera.height) {
+            translate(0, -camera.y);
+        } else {
+            translate(0, 0);
+        }
+    };
+    
+    return Camera;
+})();
 
-Camera.view = function(camera) {
-    // translate based on camera's coordinates
-    if (camera.info.width >= camera.width) {
-        translate(-camera.x, 0);
-    } else {
-        translate(0, 0);
-    }
-
-    if (camera.info.height >= camera.height) {
-        translate(0, -camera.y);
-    } else {
-        translate(0, 0);
-    }
-};
-//}
 //}
 
 /** Game Entities **/
 // {
-// static items that do not move
-var tileTypes = [];
 
-var Tile = (function () {
-    function Tile(config) {
+/** 
+ * @object_constructor TileMap
+ * A tilemap consists of non-interactive static game elements called tiles
+**/
+var TileMap = (function () {
+    // TileMap constructor function
+    function TileMap(config) {
         this.name = config.name;
-        this.symbol = config.symbol;
         this.display = config.display;
         this.block = config.block || false;
     }
     
-    Tile.prototype.run = function() {
-        for (var columnNum = 0; columnNum < LevelMap[l].map.length; columnNum++) {
-            for (var rowNum = 0; rowNum < LevelMap[l].map[columnNum].length; rowNum++) {
-                var tileX = rowNum * LevelMap[l].tileWidth;
-                var tileY = columnNum * LevelMap[l].tileHeight;
-                if (LevelMap[l].map[columnNum][rowNum] === this.symbol) {
-                    this.display(tileX, tileY);
+    // TileMap static method: displays all tiles
+    TileMap.displayTiles = function() {
+        for (var columnNum = 0; columnNum < levelData[l].map.length; columnNum++) {
+            for (var rowNum = 0; rowNum < levelData[l].map[columnNum].length; rowNum++) {
+                var tileX = rowNum * levelData[l].tileWidth;
+                var tileY = columnNum * levelData[l].tileHeight;
+                var tileKey = levelData[l].map[columnNum][rowNum];
+
+                if (tileKey in TileMap.types) {
+                  var tile = TileMap.types[tileKey];
+                  tile.display(tileX, tileY);
                 }
             }
         }
     };
     
-    Tile.prototype.collide = function(tileX, tileY) {
-        return (LevelMap[l].map[tileY][tileX] === this.symbol && this.block);
+    // TileMap hash storing tile types
+    TileMap.types = {};
+    
+    // TileMapp static method: add new tile type
+    TileMap.addType = function(config) {
+        return new TileMap({name : config.name, block : config.block, display: config.display});
     };
     
-    return Tile;
-})();
-
-// Block Tile Type
-tileTypes.push(new Tile({
-    name: 'block',
-    symbol: '#',
-    block: true,
-    display: function(tileX, tileY) {
-        fill(0);
-        rect(tileX, tileY, LevelMap[l].tileWidth, LevelMap[l].tileHeight);
-    }
-}));
-
-// Block Tile Type 2
-tileTypes.push(new Tile({
-    name: 'pillar',
-    symbol: 'p',
-    block: true,
-    display: function(tileX, tileY) {
-         image(getImage("cute/WallBlockTall"), tileX, tileY, LevelMap[l].tileWidth, LevelMap[l].tileHeight);
-    }
-}));
-
-// Grass Tile Type
-tileTypes.push(new Tile({
-    name: 'grass',
-    symbol: 'g',
-    block: false,
-    display: function(tileX, tileY) {
-        fill(21, 217, 80); // Green color for grass
-        var x = tileX, y = tileY, w = LevelMap[l].tileWidth, h = LevelMap[l].tileHeight;
-        var bladeWidth = w / 1; // Width of each blade of grass
+    // TileMap static method: tests collision with object
+    // handleCollision: function to handle collision 
+    // edgesX (true/false): if true then vertical edges count for X collisions
+    // edgesY (true/false): if true then horizontal edges count for Y collisions
+    TileMap.testCollisions = function(object, handleCollision, edgesX, edgesY) {
+        var leftX, rightX, topY, bottomY;
+        
+        if (edgesX) {
+            leftX = Math.floor((object.x) / levelData[l].tileWidth);
+            rightX = Math.floor((object.x + object.width) / levelData[l].tileWidth);
+        } else {
+            leftX = Math.floor((object.x + 1) / levelData[l].tileWidth);
+            rightX = Math.floor((object.x + object.width - 1) / levelData[l].tileWidth);
+        }
+        
+        if (edgesY) {
+            topY = Math.floor((object.y) / levelData[l].tileHeight);
+            bottomY = Math.floor((object.y + object.height) / levelData[l].tileHeight);
+        } else {
+            topY = Math.floor((object.y + 1) / levelData[l].tileHeight);
+            bottomY = Math.floor((object.y + object.height - 1) / levelData[l].tileHeight);
+        }
     
-        // Draw three blades of grass
-        triangle(x + w / 2, y, x, y + h, x + w, y + h);
-        triangle(x + w / 2 - bladeWidth, y, x - bladeWidth, y + h, x + w / 2 + bladeWidth, y + h);
-        triangle(x + w / 2 + bladeWidth, y, x + w / 2 - bladeWidth, y + h, x + w + bladeWidth, y + h);
-    }
-}));
-
-var actors = [];
-
-/** Actor Object Constructor **/
-// { 
-var Actor = function(config) {
-    // position & dimensions
-    this.x = config.x;
-    this.y = config.y;
-    this.width = config.width || 25;
-    this.height = config.height || 25;
-    
-    // velocity 
-    this.yVel = 0;
-    this.yAcc = 0;
-    this.xVel = 0;
-    this.xAcc = 0;
-    
-    // terminal (free falling) velocity
-    this.tVel = 8;
-    // max x velocity
-    this.maxXVel = 5;
-    
-    this.onObject = false;
-    this.onTime = 0;
-    
-    // drag force experienced on object : defaults to air friction
-    this.dragForce = airFriction;
-    
-    // create a camera to track user
-    this.camera = config.camera || null;
-};
-
-Actor.prototype.applyGravity = function() {
-    this.yAcc = (this.yVel < this.tVel) ? g : 0;
-};
-
-Actor.prototype.applyDrag = function() {
-    this.onObject = (this.onTime++ > 5) ? false : this.onObject;
-    this.dragForce = (this.onObject) ? this.dragForce : airFriction;
-};
-
-Actor.prototype.collideTile = function(handleCollision, edgesX, edgesY) {
-    var leftX, rightX, topY, bottomY;
-    
-    if (edgesX) {
-        leftX = Math.floor((this.x) / LevelMap[l].tileWidth);
-        rightX = Math.floor((this.x + this.width) / LevelMap[l].tileWidth);
-    } else {
-        leftX = Math.floor((this.x + 1) / LevelMap[l].tileWidth);
-        rightX = Math.floor((this.x + this.width - 1) / LevelMap[l].tileWidth);
-    }
-    
-    if (edgesY) {
-        topY = Math.floor((this.y) / LevelMap[l].tileHeight);
-        bottomY = Math.floor((this.y + this.height) / LevelMap[l].tileHeight);
-    } else {
-        topY = Math.floor((this.y + 1) / LevelMap[l].tileHeight);
-        bottomY = Math.floor((this.y + this.height - 1) / LevelMap[l].tileHeight);
-    }
-
-    // Array to hold the four tile coordinates
-    var tilesToCheck = [
-        {x: leftX, y: topY},
-        {x: leftX, y: bottomY},
-        {x: rightX, y: topY},
-        {x: rightX, y: bottomY}
-    ];
-
-    // Loop through each tile coordinate and check for collision
-    for (var i = 0; i < tilesToCheck.length; i++) {
-        var tile = tilesToCheck[i];
-        for (var j = 0; j < tileTypes.length; j++) {
-            var tileType = tileTypes[j];
-            if (tileType.collide(tile.x, tile.y)) {
-                handleCollision.call(this, tile.x * LevelMap[l].tileWidth, tile.y * LevelMap[l].tileHeight);
+        // Array to hold the four tile coordinates
+        var tilesToCheck = [
+            {x: leftX, y: topY},
+            {x: leftX, y: bottomY},
+            {x: rightX, y: topY},
+            {x: rightX, y: bottomY}
+        ];
+        
+        // Loop through each tile coordinate and check for collision
+        for (var i = 0; i < tilesToCheck.length; i++) {
+            var tile = tilesToCheck[i];
+            var tileKey = levelData[l].map[tile.y][tile.x];
+            
+            if (tileKey in TileMap.types && TileMap.types[tileKey].collide()) {
+                handleCollision.call(object, tile.x * levelData[l].tileWidth, tile.y * levelData[l].tileHeight);
                 break;
             }
         }
-    }
-};
-
-Actor.prototype.collideBlockTileX = function(tileX, tileY) {
-    var tile = {
-        x : tileX,
-        y : tileY,
-        width : LevelMap[l].tileWidth,
-        height: LevelMap[l].tileHeight
     };
     
-    // println('X Collision:');
-    // println("x: " + tile.x + ", y: " + tile.y + ", width: " + tile.width + ", height: " + tile.height);
-    // stroke(255, 0, 0);
-    // strokeWeight(1);
-    // noFill();
-    // rect(tile.x, tile.y, tile.width, tile.height);
-    // noLoop();
-    
-    if (this.x > tile.x && this.xVel < 0) {
-        this.x = tile.x + tile.width;
-        this.xVel = 0;
-    } else if (this.x < tile.x && this.xVel > 0) {
-        this.x = tile.x - this.width;
-        this.xVel = 0;
-    }
-};
-
-Actor.prototype.collideBlockTileY = function(tileX, tileY) {
-    var tile = {
-        x : tileX,
-        y : tileY,
-        width : LevelMap[l].tileWidth,
-        height: LevelMap[l].tileHeight
+    // TileMap Instance Method: returns true if the tile is ready for collisions
+    TileMap.prototype.collide = function() {
+        return this.block;
     };
     
-    // println('Y Collision:');
-    // println("x: " + tile.x + ", y: " + tile.y + ", width: " + tile.width + ", height: " + tile.height);
-    // stroke(255, 0, 0);
-    // strokeWeight(1);
-    // noFill();
-    // rect(tile.x, tile.y, tile.width, tile.height);
-    
-    
-    if (this.y > tile.y && this.yVel < 0) {
-        this.y = tile.y + tile.height;
-        this.yVel *= -1;
-    } else if (this.y < tile.y) {
-        this.y = tile.y - this.height;
+    return TileMap;
+})();
+
+TileMap.types = {
+    '#' : TileMap.addType({
+        name: 'block',
+        block: true,
+        display: function(tileX, tileY) {
+            fill(0);
+            rect(tileX, tileY, levelData[l].tileWidth, levelData[l].tileHeight);
+        }
+    }),
+    'p' : TileMap.addType({
+        name: 'pillar',
+        block: true,
+        display: function(tileX, tileY) {
+             image(getImage("cute/WallBlockTall"), tileX, tileY, levelData[l].tileWidth, levelData[l].tileHeight);
+        }
+    }),
+    'g' : TileMap.addType({
+        name: 'grass',
+        block: false,
+        display: function(tileX, tileY) {
+            fill(21, 217, 80); // Green color for grass
+            var x = tileX, y = tileY, w = levelData[l].tileWidth, h = levelData[l].tileHeight;
+            var bladeWidth = w / 1; // Width of each blade of grass
+        
+            // Draw three blades of grass
+            triangle(x + w / 2, y, x, y + h, x + w, y + h);
+            triangle(x + w / 2 - bladeWidth, y, x - bladeWidth, y + h, x + w / 2 + bladeWidth, y + h);
+            triangle(x + w / 2 + bladeWidth, y, x + w / 2 - bladeWidth, y + h, x + w + bladeWidth, y + h);
+        }
+    })
+};
+
+/**
+ * @object_constructor Actor
+ * Master class for game objects that move and interact with the environment
+ **/
+var Actor = (function() {
+    // Actor constructor function
+    function Actor(config) {
+        // position & dimensions
+        this.x = config.x;
+        this.y = config.y;
+        this.width = config.width || 25;
+        this.height = config.height || 25;
+        
+        // velocity 
         this.yVel = 0;
         this.yAcc = 0;
-        this.dragForce = 0.5;
-        this.onObject = true;
-        this.onTime = 0;
-    }
-};
-
-Actor.prototype.updateX = function(activateLeft, activateRight) {
-    this.applyDrag();
-    
-    if (activateLeft && abs(this.xVel) < this.maxXVel) {
-        this.xAcc = -0.2;
-        this.xAcc -= (this.xVel > 0) ? this.dragForce/2 : 0;
-    } else if (activateRight && abs(this.xVel) < this.maxXVel) {
-        this.xAcc = 0.2;
-        this.xAcc += (this.xVel < 0) ? this.dragForce/2 : 0;
-    } else if (abs(this.xVel) > this.dragForce) {
-        this.xAcc = (this.xVel < 0) ? this.dragForce : -this.dragForce;
-    } else {
         this.xVel = 0;
+        this.xAcc = 0;
+        
+        // terminal (free falling) velocity
+        this.tVel = 8;
+        // max x velocity
+        this.maxXVel = 5;
+        
+        this.onObject = false;
+        this.onTime = 0;
+        
+        // drag force experienced on object : defaults to air friction
+        this.dragForce = airFriction;
+        
+        // create a camera to track user
+        this.camera = config.camera || null;
     }
     
-    this.x += this.xVel;
-    this.xVel += this.xAcc;
+    // accelerates an object by gravity up to a certain terminal velocity
+    Actor.prototype.applyGravity = function() {
+        this.yAcc = (this.yVel < this.tVel) ? g : 0;
+    };
+    
+    // defines the drag force for the actor in order to apply friction against horizontal movement
+    Actor.prototype.applyDrag = function() {
+        this.onObject = (this.onTime++ > 5) ? false : this.onObject;
+        this.dragForce = (this.onObject) ? this.dragForce : airFriction;
+    };
+    
+    // identifies collision with a tile, and sends control over to handleCollision function
+    // Handle X Collisions: this.collideTile(this.collideBlockTileX, true, false);
+    // Handle Y Collisions: this.collideTile(this.collideBlockTileY, false, true);
+    Actor.prototype.tileCollisions = function(handleCollision, edgesX, edgesY) {
+        TileMap.testCollisions(this, handleCollision, edgesX, edgesY);
+    };
+    
+    // handles X collisions between actor and block-tile
+    Actor.prototype.handleXCollisions = function(tileX, tileY) {
+        var tile = {
+            x : tileX,
+            y : tileY,
+            width : levelData[l].tileWidth,
+            height: levelData[l].tileHeight
+        };
+        
+        // println('X Collision:');
+        // println("x: " + tile.x + ", y: " + tile.y + ", width: " + tile.width + ", height: " + tile.height);
+        // stroke(255, 0, 0);
+        // strokeWeight(1);
+        // noFill();
+        // rect(tile.x, tile.y, tile.width, tile.height);
+        // noLoop();
+        
+        if (this.x > tile.x && this.xVel < 0) {
+            this.x = tile.x + tile.width;
+            this.xVel = 0;
+        } else if (this.x < tile.x && this.xVel > 0) {
+            this.x = tile.x - this.width;
+            this.xVel = 0;
+        }
+    };
+    
+    // handles Y collisions between actor and block-tile
+    Actor.prototype.handleYCollisions = function(tileX, tileY) {
+        var tile = {
+            x : tileX,
+            y : tileY,
+            width : levelData[l].tileWidth,
+            height: levelData[l].tileHeight
+        };
+        
+        // println('Y Collision:');
+        // println("x: " + tile.x + ", y: " + tile.y + ", width: " + tile.width + ", height: " + tile.height);
+        // stroke(255, 0, 0);
+        // strokeWeight(1);
+        // noFill();
+        // rect(tile.x, tile.y, tile.width, tile.height);
+        
+        
+        if (this.y > tile.y && this.yVel < 0) {
+            this.y = tile.y + tile.height;
+            this.yVel *= -1;
+        } else if (this.y < tile.y) {
+            this.y = tile.y - this.height;
+            this.yVel = 0;
+            this.yAcc = 0;
+            this.dragForce = 0.5;
+            this.onObject = true;
+            this.onTime = 0;
+        }
+    };
+    
+    // updates actor's x position based on activation inputs (activateLeft/activateRight)
+    Actor.prototype.updateX = function(activateLeft, activateRight) {
+        this.applyDrag();
+        
+        if (activateLeft && abs(this.xVel) < this.maxXVel) {
+            this.xAcc = -0.2;
+            this.xAcc -= (this.xVel > 0) ? this.dragForce/2 : 0;
+        } else if (activateRight && abs(this.xVel) < this.maxXVel) {
+            this.xAcc = 0.2;
+            this.xAcc += (this.xVel < 0) ? this.dragForce/2 : 0;
+        } else if (abs(this.xVel) > this.dragForce) {
+            this.xAcc = (this.xVel < 0) ? this.dragForce : -this.dragForce;
+        } else {
+            this.xVel = 0;
+        }
+        
+        this.x += this.xVel;
+        this.xVel += this.xAcc;
+    };
+    
+    // updates actor's y position based on activation input (activateJump)
+    Actor.prototype.updateY = function(activateJump) {
+        if (activateJump && abs(this.yVel) < 0.1 && abs(this.yAcc) < 0.1) {
+            this.yVel = -5;
+        }
+        
+        this.applyGravity();
+    
+        this.y += this.yVel;
+        this.yVel += this.yAcc;
 };
+    
+    return Actor;
+})();
 
-Actor.prototype.updateY = function(activateJump) {
-    if (activateJump && abs(this.yVel) < 0.1 && abs(this.yAcc) < 0.1) {
-        this.yVel = -5;
+var actors = [];
+
+/**
+ * @object_constructor Player
+ **/
+var Player = (function() {
+    // Player constructor function
+    function Player(config) {
+        Actor.call(this, config);
     }
     
-    this.applyGravity();
-
-    this.y += this.yVel;
-    this.yVel += this.yAcc;
-};
-//}
-
-/** Player Object Constructor **/
-// {
-var Player = function(config) {
-    Actor.call(this, config);
-};
-
-Player.prototype = Object.create(Actor.prototype);
-
-Player.prototype.moveX = function() {
-    this.updateX(input[LEFT], input[RIGHT]);
-};
-
-Player.prototype.moveY = function() {
-    this.updateY(input[UP]);
-};
-
-Player.prototype.display = function() {
-    fill(255, 0, 4);
-    noStroke();
-    rect(this.x, this.y, this.width, this.height);
-};
-
-Player.prototype.update = function() {
-    this.moveX();
-    this.collideTile(this.collideBlockTileX, true, false);
+    // inherit methods from Actor
+    Player.prototype = Object.create(Actor.prototype);
     
-    this.moveY();
-    this.collideTile(this.collideBlockTileY, false, true);
-
-
-    this.display();
-    this.camera.track(this);
-};
-
-//}
+    // handle x movement
+    Player.prototype.moveX = function() {
+        this.updateX(input[LEFT], input[RIGHT]);
+    };
+    
+    // handle y movement
+    Player.prototype.moveY = function() {
+        this.updateY(input[UP]);
+    };
+    
+    // display player
+    Player.prototype.display = function() {
+        fill(255, 0, 4);
+        noStroke();
+        rect(this.x, this.y, this.width, this.height);
+    };
+    
+    // call player methods
+    Player.prototype.update = function() {
+        this.moveX();
+        this.tileCollisions(this.handleXCollisions, true, false);
+        
+        this.moveY();
+        this.tileCollisions(this.handleYCollisions, false, true);
+    
+    
+        this.display();
+        this.camera.track(this);
+    };
+    
+    return Player;
+})();
 
 //}
 
@@ -400,15 +458,15 @@ var CreateLevel = function() {
     actors[l] = [];
     
     // setup camera
-    LevelMap[l].width = LevelMap[l].map[0].length * LevelMap[l].tileWidth;
-    LevelMap[l].height = LevelMap[l].map.length * LevelMap[l].tileHeight;
-    viewCam = new Camera(LevelMap[l].xPos, LevelMap[l].yPos, width, height, LevelMap[l]);
+    levelData[l].width = levelData[l].map[0].length * levelData[l].tileWidth;
+    levelData[l].height = levelData[l].map.length * levelData[l].tileHeight;
+    viewCam = new Camera(levelData[l].xPos, levelData[l].yPos, width, height, levelData[l]);
     
-    for (var columnNum = 0; columnNum < LevelMap[l].map.length; columnNum++) {
-        for (var rowNum = 0; rowNum < LevelMap[l].map[columnNum].length; rowNum++) {
-            var Y = columnNum * LevelMap[l].tileHeight;
-            var X = rowNum * LevelMap[l].tileWidth;
-            switch (LevelMap[l].map[columnNum][rowNum]) {
+    for (var columnNum = 0; columnNum < levelData[l].map.length; columnNum++) {
+        for (var rowNum = 0; rowNum < levelData[l].map[columnNum].length; rowNum++) {
+            var Y = columnNum * levelData[l].tileHeight;
+            var X = rowNum * levelData[l].tileWidth;
+            switch (levelData[l].map[columnNum][rowNum]) {
                 case "#":
                     // Instead of creating blocks, we handle collision with tiles directly in Player's update method
                     break;
@@ -416,7 +474,7 @@ var CreateLevel = function() {
                     actors[l].push(new Player({
                         x: X,
                         y: Y,
-                        camera: new Camera(LevelMap[l].xPos, LevelMap[l].yPos, width, height, LevelMap[l])
+                        camera: new Camera(levelData[l].xPos, levelData[l].yPos, width, height, levelData[l])
                     }));
             }
         }
@@ -426,15 +484,12 @@ var CreateLevel = function() {
     viewCamera = player1.camera;
 };
 
-
 CreateLevel();
 
 var UpdateLevel = function() {
     background(255, 255, 255);
 
-    for (var i = 0; i < tileTypes.length; i++) {
-        tileTypes[i].run();
-    }
+    TileMap.displayTiles();
 
     for (var i = 0; i < actors[l].length; i++) {
         actors[l][i].update();
