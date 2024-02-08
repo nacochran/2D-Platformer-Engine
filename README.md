@@ -1,2 +1,2 @@
-# 2D-Platformer-Engine
-This is an engine or library I am creating to easily create 2D platformers.
+# Game Library
+This is an library full of JS technique I use to create games.
