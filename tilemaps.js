@@ -8,46 +8,6 @@ keyReleased = function() {
     input[keyCode] = false;
 };
 
-/** Level Info **/
-// {
-var levelData = [
-    {
-        level: 1,
-        xPos: 0,
-        yPos: 0,
-        tileWidth: 25,
-        tileHeight: 25,
-        map: [
-            "########################",
-            "#                      #",
-            "#                      #",
-            "#                      #",
-            "#                      #",
-            "#                      #",
-            "#                      #",
-            "#                      #",
-            "#                      #",
-            "#                      #",
-            "#   # @                #",
-            "#   #                  #",
-            "#  #####              ##",
-            "#                    ###",
-            "#  gggg   ppp  #    ####",
-            "########################",
-        ],
-    },
-];
-
-var Level = 1, 
-    l = (Level - 1);
-
-// physics variables
-var airFriction = 0.1;
-var g = 0.2;
-
-var viewCam;
-//}
-
 /** Auxiliary Functions **/
 // {
 
@@ -57,6 +17,12 @@ var viewCam;
 var boxCollide = function(box1, box2) {
     return (box1.x + box1.width > box2.x && box1.x < box2.x + box2.width && box1.y + box1.height > box2.y && box1.y < box2.y + box2.height);
 };
+
+//}
+
+/** Camera **/
+// {
+// Prequisites: None
 
 /** 
  * @object_constructor Camera
@@ -132,11 +98,28 @@ var Camera = (function() {
     
     return Camera;
 })();
-
 //}
 
-/** Game Entities **/
+/** TileMap **/
 // {
+
+/**
+ * @object_constructor Tile
+ * A tile is a non-interactive static game element
+ **/
+var Tile = (function() {
+    function Tile(config) {
+        this.name = config.name;
+        this.display = config.display;
+        this.block = config.block || false;
+    }
+    
+    Tile.prototype.collide = function() {
+        return this.block;
+    };
+    
+    return Tile;
+})();
 
 /** 
  * @object_constructor TileMap
@@ -145,56 +128,51 @@ var Camera = (function() {
 var TileMap = (function () {
     // TileMap constructor function
     function TileMap(config) {
-        this.name = config.name;
-        this.display = config.display;
-        this.block = config.block || false;
+        this.types = config.types || {};
     }
     
     // TileMap static method: displays all tiles
-    TileMap.displayTiles = function() {
-        for (var columnNum = 0; columnNum < levelData[l].map.length; columnNum++) {
-            for (var rowNum = 0; rowNum < levelData[l].map[columnNum].length; rowNum++) {
-                var tileX = rowNum * levelData[l].tileWidth;
-                var tileY = columnNum * levelData[l].tileHeight;
-                var tileKey = levelData[l].map[columnNum][rowNum];
+    TileMap.prototype.displayTiles = function(level) {
+        for (var columnNum = 0; columnNum < level.map.length; columnNum++) {
+            for (var rowNum = 0; rowNum < level.map[columnNum].length; rowNum++) {
+                var tileX = rowNum * level.tileWidth;
+                var tileY = columnNum * level.tileHeight;
+                var tileKey = level.map[columnNum][rowNum];
 
-                if (tileKey in TileMap.types) {
-                  var tile = TileMap.types[tileKey];
-                  tile.display(tileX, tileY);
+                if (tileKey in this.types) {
+                  var tile = this.types[tileKey];
+                  tile.display(tileX, tileY, level.tileWidth, level.tileHeight);
                 }
             }
         }
     };
     
-    // TileMap hash storing tile types
-    TileMap.types = {};
-    
     // TileMapp static method: add new tile type
-    TileMap.addType = function(config) {
-        return new TileMap({name : config.name, block : config.block, display: config.display});
+    TileMap.prototype.addType = function(config) {
+        this.types[config.symbol] = new Tile({name : config.name, block : config.block, display: config.display});
     };
     
     // TileMap static method: tests collision with object
     // handleCollision: function to handle collision 
     // edgesX (true/false): if true then vertical edges count for X collisions
     // edgesY (true/false): if true then horizontal edges count for Y collisions
-    TileMap.testCollisions = function(object, handleCollision, edgesX, edgesY) {
+    TileMap.prototype.testCollisions = function(level, object, handleCollision, edgesX, edgesY) {
         var leftX, rightX, topY, bottomY;
         
         if (edgesX) {
-            leftX = Math.floor((object.x) / levelData[l].tileWidth);
-            rightX = Math.floor((object.x + object.width) / levelData[l].tileWidth);
+            leftX = Math.floor((object.x) / level.tileWidth);
+            rightX = Math.floor((object.x + object.width) / level.tileWidth);
         } else {
-            leftX = Math.floor((object.x + 1) / levelData[l].tileWidth);
-            rightX = Math.floor((object.x + object.width - 1) / levelData[l].tileWidth);
+            leftX = Math.floor((object.x + 1) / level.tileWidth);
+            rightX = Math.floor((object.x + object.width - 1) / level.tileWidth);
         }
         
         if (edgesY) {
-            topY = Math.floor((object.y) / levelData[l].tileHeight);
-            bottomY = Math.floor((object.y + object.height) / levelData[l].tileHeight);
+            topY = Math.floor((object.y) / level.tileHeight);
+            bottomY = Math.floor((object.y + object.height) / level.tileHeight);
         } else {
-            topY = Math.floor((object.y + 1) / levelData[l].tileHeight);
-            bottomY = Math.floor((object.y + object.height - 1) / levelData[l].tileHeight);
+            topY = Math.floor((object.y + 1) / level.tileHeight);
+            bottomY = Math.floor((object.y + object.height - 1) / level.tileHeight);
         }
     
         // Array to hold the four tile coordinates
@@ -208,54 +186,181 @@ var TileMap = (function () {
         // Loop through each tile coordinate and check for collision
         for (var i = 0; i < tilesToCheck.length; i++) {
             var tile = tilesToCheck[i];
-            var tileKey = levelData[l].map[tile.y][tile.x];
+            var tileKey = level.map[tile.y][tile.x];
             
-            if (tileKey in TileMap.types && TileMap.types[tileKey].collide()) {
-                handleCollision.call(object, tile.x * levelData[l].tileWidth, tile.y * levelData[l].tileHeight);
+            if (tileKey in this.types && this.types[tileKey].collide()) {
+                handleCollision.call(object, tile.x * level.tileWidth, tile.y * level.tileHeight, level.tileWidth, level.tileHeight);
                 break;
             }
         }
     };
     
-    // TileMap Instance Method: returns true if the tile is ready for collisions
-    TileMap.prototype.collide = function() {
-        return this.block;
-    };
-    
     return TileMap;
 })();
 
-TileMap.types = {
-    '#' : TileMap.addType({
-        name: 'block',
-        block: true,
-        display: function(tileX, tileY) {
-            fill(0);
-            rect(tileX, tileY, levelData[l].tileWidth, levelData[l].tileHeight);
-        }
-    }),
-    'p' : TileMap.addType({
-        name: 'pillar',
-        block: true,
-        display: function(tileX, tileY) {
-             image(getImage("cute/WallBlockTall"), tileX, tileY, levelData[l].tileWidth, levelData[l].tileHeight);
-        }
-    }),
-    'g' : TileMap.addType({
-        name: 'grass',
-        block: false,
-        display: function(tileX, tileY) {
-            fill(21, 217, 80); // Green color for grass
-            var x = tileX, y = tileY, w = levelData[l].tileWidth, h = levelData[l].tileHeight;
-            var bladeWidth = w / 1; // Width of each blade of grass
+//}
+
+/** Game **/
+// {
+
+// Prequisites: Camera
+
+/**
+ * @object_constructor Game
+ **/
+var Game = (function() {
+    function Game(config) {
+        // map variables
+        this.levelData = config.levelData || [];
+        this.mapPalette = config.mapPalette || {};
+        this.tileMap = config.tileMap || {};
+        this.level = 1;
+        this.viewCamera = null;
         
-            // Draw three blades of grass
-            triangle(x + w / 2, y, x, y + h, x + w, y + h);
-            triangle(x + w / 2 - bladeWidth, y, x - bladeWidth, y + h, x + w / 2 + bladeWidth, y + h);
-            triangle(x + w / 2 + bladeWidth, y, x + w / 2 - bladeWidth, y + h, x + w + bladeWidth, y + h);
+        this.player1 = null;
+        
+        // physics variables
+        this.airFriction = 0.1;
+        this.g = 0.2;
+        
+        this.entities = [];
+    }
+    
+    Game.prototype.addEntity = function (type, entity) {
+        var l = this.level - 1;
+        
+        this.entities[l][type] = (this.entities[l].hasOwnProperty(type)) ? this.entities[l][type] : [];
+        this.entities[l][type].push(entity);
+    };
+    
+    Game.prototype.createLevel = function() {
+        var l = this.level - 1,
+            level = this.levelData[l];
+        
+        // Initialize entities array for the current level
+        this.entities[l] = { };
+        
+        // setup camera
+        level.width = level.map[0].length * level.tileWidth;
+        level.height = level.map.length * level.tileHeight;
+        this.viewCamera = new Camera(level.xPos, level.yPos, width, height, level);
+        
+        for (var columnNum = 0; columnNum < level.map.length; columnNum++) {
+            for (var rowNum = 0; rowNum < level.map[columnNum].length; rowNum++) {
+                var Y = columnNum * level.tileHeight;
+                var X = rowNum * level.tileWidth;
+                
+                var symbol = level.map[columnNum][rowNum];
+                // Check if the symbol exists in the mapPalette
+                if (symbol in this.mapPalette) {
+                    // Call the function associated with the symbol
+                    this.mapPalette[symbol](X, Y, level);
+                }
+            }
         }
-    })
+        
+        // this.player1 = this.entities[l].players[0];
+        // this.viewCamera = this.player1.camera;
+    };
+    
+    Game.prototype.runLevel = function() {
+        var l = this.level - 1,
+            level = this.levelData[l];
+        
+        background(255, 255, 255);
+    
+        this.tileMap.displayTiles(level);
+    
+        // Loop through each type of object in entities
+        for (var type in this.entities[l]) {
+            if (this.entities[l].hasOwnProperty(type)) {
+                for (var i = 0; i < this.entities[l][type].length; i++) {
+                    this.entities[l][type][i].update();
+                }
+            }
+        }
+
 };
+    
+    Game.prototype.getLevel = function() {
+        return this.levelData[this.level - 1];
+    };
+    
+    return Game;
+})();
+
+//}
+
+
+var game = new Game({
+    levelData: [
+        {
+            level: 1,
+            xPos: 0,
+            yPos: 0,
+            tileWidth: 25,
+            tileHeight: 25,
+            map: [
+                "########################",
+                "#                      #",
+                "#                      #",
+                "#                      #",
+                "#                      #",
+                "#                      #",
+                "#                      #",
+                "#                      #",
+                "#                      #",
+                "#                      #",
+                "#   # @                #",
+                "#   #                  #",
+                "#  #####              ##",
+                "#                    ###",
+                "#  gggg   ppp  #    ####",
+                "########################",
+            ],
+        },
+    ],
+    tileMap : new TileMap({})
+});
+
+game.tileMap.addType({
+    symbol : '#',
+    name: 'block',
+    block: true,
+    display: function(tileX, tileY, tileWidth, tileHeight) {
+        fill(0);
+        rect(tileX, tileY, tileWidth, tileHeight);
+    }
+});
+
+game.tileMap.addType({
+    symbol : 'p',
+    name: 'pillar',
+    block: true,
+    display: function(tileX, tileY, tileWidth, tileHeight) {
+        image(getImage("cute/WallBlockTall"), tileX, tileY, tileWidth, tileHeight);
+    }
+});
+
+game.tileMap.addType({
+    symbol: 'g',
+    name: 'grass',
+    block: false,
+    display: function(tileX, tileY, tileWidth, tileHeight) {
+        fill(21, 217, 80); // Green color for grass
+        var x = tileX, y = tileY, w = tileWidth, h = tileHeight;
+        var bladeWidth = w / 1; // Width of each blade of grass
+    
+        // Draw three blades of grass
+        triangle(x + w / 2, y, x, y + h, x + w, y + h);
+        triangle(x + w / 2 - bladeWidth, y, x - bladeWidth, y + h, x + w / 2 + bladeWidth, y + h);
+        triangle(x + w / 2 + bladeWidth, y, x + w / 2 - bladeWidth, y + h, x + w + bladeWidth, y + h);
+    }
+});
+
+
+/** Game Entities **/
+// {
 
 /**
  * @object_constructor Actor
@@ -285,7 +390,7 @@ var Actor = (function() {
         this.onTime = 0;
         
         // drag force experienced on object : defaults to air friction
-        this.dragForce = airFriction;
+        this.dragForce = game.airFriction;
         
         // create a camera to track user
         this.camera = config.camera || null;
@@ -293,29 +398,29 @@ var Actor = (function() {
     
     // accelerates an object by gravity up to a certain terminal velocity
     Actor.prototype.applyGravity = function() {
-        this.yAcc = (this.yVel < this.tVel) ? g : 0;
+        this.yAcc = (this.yVel < this.tVel) ? game.g : 0;
     };
     
     // defines the drag force for the actor in order to apply friction against horizontal movement
     Actor.prototype.applyDrag = function() {
         this.onObject = (this.onTime++ > 5) ? false : this.onObject;
-        this.dragForce = (this.onObject) ? this.dragForce : airFriction;
+        this.dragForce = (this.onObject) ? this.dragForce : game.airFriction;
     };
     
     // identifies collision with a tile, and sends control over to handleCollision function
     // Handle X Collisions: this.collideTile(this.collideBlockTileX, true, false);
     // Handle Y Collisions: this.collideTile(this.collideBlockTileY, false, true);
-    Actor.prototype.tileCollisions = function(handleCollision, edgesX, edgesY) {
-        TileMap.testCollisions(this, handleCollision, edgesX, edgesY);
+    Actor.prototype.tileCollisions = function(level, handleCollision, edgesX, edgesY) {
+        game.tileMap.testCollisions(level, this, handleCollision, edgesX, edgesY);
     };
     
     // handles X collisions between actor and block-tile
-    Actor.prototype.handleXCollisions = function(tileX, tileY) {
+    Actor.prototype.handleXCollisions = function(tileX, tileY, tileWidth, tileHeight) {
         var tile = {
             x : tileX,
             y : tileY,
-            width : levelData[l].tileWidth,
-            height: levelData[l].tileHeight
+            width : tileWidth,
+            height: tileHeight
         };
         
         // println('X Collision:');
@@ -336,12 +441,12 @@ var Actor = (function() {
     };
     
     // handles Y collisions between actor and block-tile
-    Actor.prototype.handleYCollisions = function(tileX, tileY) {
+    Actor.prototype.handleYCollisions = function(tileX, tileY, tileWidth, tileHeight) {
         var tile = {
             x : tileX,
             y : tileY,
-            width : levelData[l].tileWidth,
-            height: levelData[l].tileHeight
+            width : tileWidth,
+            height: tileHeight
         };
         
         // println('Y Collision:');
@@ -432,10 +537,10 @@ var Player = (function() {
     // call player methods
     Player.prototype.update = function() {
         this.moveX();
-        this.tileCollisions(this.handleXCollisions, true, false);
+        this.tileCollisions(game.getLevel(), this.handleXCollisions, true, false);
         
         this.moveY();
-        this.tileCollisions(this.handleYCollisions, false, true);
+        this.tileCollisions(game.getLevel(), this.handleYCollisions, false, true);
     
     
         this.display();
@@ -447,94 +552,21 @@ var Player = (function() {
 
 //}
 
-var Game = (function() {
-    function Game(config) {
-        // map variables
-        this.levelMap = config.levelMap || [];
-        this.mapPalette = config.mapPalette || {};
-        this.level = 1;
-        this.mapScale = config.mapScale || 25;
-        this.viewCam = null;
-        
-        // physics variables
-        this.airFriction = 0.1;
-        this.g = 0.2;
-        
-        this.entities = [];
+game.mapPalette = {
+    '@' : function(x, y, level) {
+        game.addEntity('players', new Player({
+            x: x,
+            y: y,
+            camera: new Camera(level.xPos, level.yPos, width, height, level)
+        }));
     }
-    
-    return Game;
-})();
-
-var entities = [];
-
-function addEntity(type, entity) {
-    entities[l][type] = (entities[l].hasOwnProperty(type)) ? entities[l][type] : [];
-    entities[l][type].push(entity);
-}
-
-/** Game Engine **/
-// {
-var player1, viewCamera;
-
-// setup level
-var CreateLevel = function() {
-    // Initialize entities array for the current level
-    entities[l] = { };
-    
-    // setup camera
-    levelData[l].width = levelData[l].map[0].length * levelData[l].tileWidth;
-    levelData[l].height = levelData[l].map.length * levelData[l].tileHeight;
-    viewCam = new Camera(levelData[l].xPos, levelData[l].yPos, width, height, levelData[l]);
-    
-    for (var columnNum = 0; columnNum < levelData[l].map.length; columnNum++) {
-        for (var rowNum = 0; rowNum < levelData[l].map[columnNum].length; rowNum++) {
-            var Y = columnNum * levelData[l].tileHeight;
-            var X = rowNum * levelData[l].tileWidth;
-            switch (levelData[l].map[columnNum][rowNum]) {
-                case "#":
-                    // Instead of creating blocks, we handle collision with tiles directly in Player's update method
-                    break;
-                case "@":
-                    addEntity('players', new Player({
-                        x: X,
-                        y: Y,
-                        camera: new Camera(levelData[l].xPos, levelData[l].yPos, width, height, levelData[l])
-                    }));
-                    
-                    player1 = entities[l].players[0];
-                    viewCamera = player1.camera;
-            }
-        }
-    }
-    
-    
 };
 
-CreateLevel();
-
-var UpdateLevel = function() {
-    background(255, 255, 255);
-
-    TileMap.displayTiles();
-
-    // Loop through each type of object in entities
-    for (var type in entities[l]) {
-        if (entities[l].hasOwnProperty(type)) {
-            for (var i = 0; i < entities[l][type].length; i++) {
-                entities[l][type][i].update();
-            }
-        }
-    }
-
-};
-
-//}
-
+game.createLevel();
 
 draw = function() {
     pushMatrix();
-    Camera.view(player1.camera);
-    UpdateLevel();
+    Camera.view(game.viewCamera);
+    game.runLevel();
     popMatrix();
 };
