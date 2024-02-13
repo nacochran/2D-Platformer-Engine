@@ -259,8 +259,8 @@ var Game = (function() {
             }
         }
         
-        // this.player1 = this.entities[l].players[0];
-        // this.viewCamera = this.player1.camera;
+        this.player1 = this.entities[l].players[0];
+        this.viewCamera = this.player1.camera;
     };
     
     Game.prototype.runLevel = function() {
