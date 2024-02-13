@@ -400,8 +400,6 @@ var Actor = (function() {
     return Actor;
 })();
 
-var actors = [];
-
 /**
  * @object_constructor Player
  **/
@@ -449,13 +447,40 @@ var Player = (function() {
 
 //}
 
+var Game = (function() {
+    function Game(config) {
+        // map variables
+        this.levelMap = config.levelMap || [];
+        this.mapPalette = config.mapPalette || {};
+        this.level = 1;
+        this.mapScale = config.mapScale || 25;
+        this.viewCam = null;
+        
+        // physics variables
+        this.airFriction = 0.1;
+        this.g = 0.2;
+        
+        this.entities = [];
+    }
+    
+    return Game;
+})();
+
+var entities = [];
+
+function addEntity(type, entity) {
+    entities[l][type] = (entities[l].hasOwnProperty(type)) ? entities[l][type] : [];
+    entities[l][type].push(entity);
+}
+
 /** Game Engine **/
 // {
 var player1, viewCamera;
 
+// setup level
 var CreateLevel = function() {
-    // Initialize actors array for the current level
-    actors[l] = [];
+    // Initialize entities array for the current level
+    entities[l] = { };
     
     // setup camera
     levelData[l].width = levelData[l].map[0].length * levelData[l].tileWidth;
@@ -471,17 +496,19 @@ var CreateLevel = function() {
                     // Instead of creating blocks, we handle collision with tiles directly in Player's update method
                     break;
                 case "@":
-                    actors[l].push(new Player({
+                    addEntity('players', new Player({
                         x: X,
                         y: Y,
                         camera: new Camera(levelData[l].xPos, levelData[l].yPos, width, height, levelData[l])
                     }));
+                    
+                    player1 = entities[l].players[0];
+                    viewCamera = player1.camera;
             }
         }
     }
     
-    player1 = actors[l][0];
-    viewCamera = player1.camera;
+    
 };
 
 CreateLevel();
@@ -491,9 +518,15 @@ var UpdateLevel = function() {
 
     TileMap.displayTiles();
 
-    for (var i = 0; i < actors[l].length; i++) {
-        actors[l][i].update();
+    // Loop through each type of object in entities
+    for (var type in entities[l]) {
+        if (entities[l].hasOwnProperty(type)) {
+            for (var i = 0; i < entities[l][type].length; i++) {
+                entities[l][type][i].update();
+            }
+        }
     }
+
 };
 
 //}
