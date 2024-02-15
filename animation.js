@@ -1,4 +1,9 @@
-
+/**
+ * Animation Library (Processing.js)
+ * Object Prototypes:
+    * Prop
+    * Animation
+ **/
 
 /**
  * Adds a new component to our prop

@@ -1,6 +1,10 @@
-/** 
- * Note: This code is currently in the form of Processing.js
-**/
+/**
+ * 2D Platformer (Processing.js)
+ * Object Prototypes:
+    * KeyManager, Camera, Actor, & Player
+ * Features: Uses block arrays for game entities (no tile maps)
+ * No 'Game' engine object prototype
+ **/
 
 var input = [];
 keyPressed = function() {
